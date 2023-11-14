@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todos-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: todos-api
+  template:
+    metadata:
+      labels:
+        component: todos-api
+    spec:
+      containers:
+        - name: todos-api
+          image: todos-api:1.0.0
+          env:
+            - name: PORT
+              value: "3000"
+            - name: DB_CONNECTION_STRING
+              value: "postgres://postgres:postgres@todos-db:5432/postgres"
+          ports:
+            - containerPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: todos-api
+spec:
+  selector:
+    component: todos-api
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: NodePort
