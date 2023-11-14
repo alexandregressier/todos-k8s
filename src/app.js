@@ -8,8 +8,9 @@ app.use("/api", router)
 const port = process.env.PORT || 3000
 
 const {Pool} = require("pg")
+const connectionString = process.env.DB_CONNECTION_STRING || "postgres://postgres:postgres@localhost:5432/postgres"
 const pool = new Pool({
-  connectionString: "postgres://postgres:postgres@localhost:5432/postgres",
+  connectionString,
   ssl: false,
   max: 20,
   idleTimeoutMillis: 30000,
@@ -25,7 +26,7 @@ router.post("/todos", async (req, res) => {
     const newTodo = await pool.query(
       "INSERT INTO todos(id, description) VALUES($1, $2) RETURNING *", [uuidv4(), todo],
     )
-    res.json(newTodo.rows[0])
+    res.status(201).json(newTodo.rows[0])
   } catch (err) {
     console.error(err.message)
   }
@@ -49,7 +50,7 @@ router.put("/todos/:id", async (req, res) => {
     const updateTodo = await pool.query(
       "UPDATE todos SET description = $1 WHERE id = $2", [todo, id],
     )
-    res.json("To Do was updated.")
+    res.json({id, todo})
   } catch (err) {
     console.error(err.message)
   }
@@ -60,15 +61,20 @@ router.delete("/todos/:id", async (req, res) => {
   try {
     const {id} = req.params
     await pool.query("DELETE FROM todos WHERE id = $1", [id])
-    res.json("To Do was deleted.")
+    res.status(204).end()
   } catch (err) {
     console.error(err.message)
   }
 })
 
-const initDB = async () => {
-  const client = await pool.connect()
+const initDbWithRetry = async (retriesLeft = 5) => {
+  if (retriesLeft <= 0) {
+    console.error("ERROR! Failed to connect to DB, exiting")
+    process.exit(1)
+  }
+  let client
   try {
+    client = await pool.connect()
     await client.query(`
         CREATE TABLE IF NOT EXISTS todos
         (
@@ -78,14 +84,14 @@ const initDB = async () => {
     `)
     console.log("todos table successfully created")
   } catch (error) {
-    console.error("Error creating table: ", error)
-    process.exit(1)
+    console.log(`ERROR! Failed to connect to DB, retrying in 5 seconds (try ${6 - retriesLeft}/5)\n`, error)
+    setTimeout(() => initDbWithRetry(retriesLeft - 1), 5000);
   } finally {
-    client.release()
+    client && client.release()
   }
 }
 
-initDB()
+initDbWithRetry()
 
 app.listen(port, async () => {
   console.log("Server has started on port 3000")
